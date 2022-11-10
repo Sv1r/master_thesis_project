@@ -6,9 +6,9 @@ import torch
 import typing
 import numpy as np
 import pandas as pd
+import torchmetrics
 import seaborn as sns
 import matplotlib.pyplot as plt
-import segmentation_models_pytorch
 from sklearn.model_selection import train_test_split
 
 import settings
@@ -121,6 +121,22 @@ def image_show_tensor(dataloader, number_of_images=5, initial_index=0, values_na
     plt.show()
 
 
+def weights_init(model):
+    if isinstance(model, (torch.nn.Conv2d, torch.nn.ConvTranspose2d)):
+        torch.nn.init.normal_(model.weight, 0., .02)
+    if isinstance(model, torch.nn.BatchNorm2d):
+        torch.nn.init.normal_(model.weight, 0., .02)
+        torch.nn.init.constant_(model.bias, 0.)
+
+
+def display_progress(fake, current_epoch, path=r'checkpoint\evolution_of_generator'):
+    fake = fake.detach().cpu().permute(1, 2, 0)
+    plt.figure(figsize=(8, 8))
+    plt.imshow(fake, cmap='jet')
+    plt.axis('off')
+    plt.savefig(rf'{path}\{current_epoch}.png')
+
+
 def train_model(
         discriminator,
         generator,
@@ -131,9 +147,15 @@ def train_model(
         l1_lambda,
         optimizer_discriminator,
         optimizer_generator,
-        num_epochs
+        num_epochs,
+        avg_results
 ):
     """Train and Validate Model"""
+    train_discriminator_loss, valid_discriminator_loss = [], []
+    train_generator_loss, valid_generator_loss = [], []
+    train_ssim, valid_ssim = [], []
+    train_ms_ssim, valid_ms_ssim = [], []
+
     discriminator = discriminator.to(device)
     generator = generator.to(device)
     for epoch in range(num_epochs):
@@ -147,11 +169,14 @@ def train_model(
                 dataloader = valid_dataloader
                 discriminator.eval()  # Set model to evaluate mode
                 generator.eval()
+            running_discriminator_loss = 0.
+            running_generator_loss = 0.
+            running_ssim = 0.
+            running_ms_ssim = 0.
             # Iterate over data.
             with tqdm.tqdm(dataloader, unit='batch') as tqdm_loader:
-                for geometry, stress in tqdm_loader:
-                    tqdm_loader.set_description(f'Epoch {epoch} - {phase}')
-                    # Image/Mask to device
+                for step, (geometry, stress) in enumerate(tqdm_loader):
+                    tqdm_loader.set_description(f'Epoch {epoch}/{num_epochs - 1} - {phase}')
                     geometry = geometry.to(device, dtype=torch.float32)
                     stress = stress.to(device, dtype=torch.float32)
                     optimizer_discriminator.zero_grad()
@@ -184,6 +209,13 @@ def train_model(
                         loss_value_discriminator = torch.mean(
                             loss_value_discriminator_real + loss_value_discriminator_fake
                         )
+                        # Metrics
+                        ssim = torchmetrics.functional.structural_similarity_index_measure(
+                            fake_stress, stress
+                        )
+                        ms_ssim = torchmetrics.functional.multiscale_structural_similarity_index_measure(
+                            fake_stress, stress
+                        )
                         # Backward + optimize discriminator only if in training phase
                         if phase == 'Train':
                             loss_value_discriminator.backward()
@@ -191,10 +223,71 @@ def train_model(
                         # Current statistics
                         tqdm_loader.set_postfix(
                             Discriminator_Loss=loss_value_discriminator.item(),
-                            Generator_Loss=loss_value_generator.item()
+                            Generator_Loss=loss_value_generator.item(),
+                            SSIM=ssim.item(),
+                            MS_SSIM=ms_ssim.item()
                         )
                         time.sleep(.1)
+                    # Statistics
+                    running_discriminator_loss += loss_value_discriminator.item()
+                    running_generator_loss += loss_value_generator.item()
+                    running_ssim += ssim.item()
+                    running_ms_ssim += ms_ssim.item()
+            # Average values along one epoch
+            epoch_discriminator_loss = running_discriminator_loss / len(dataloader)
+            epoch_generator_loss = running_generator_loss / len(dataloader)
+            epoch_ssim = running_ssim / len(dataloader)
+            epoch_ms_ssim = running_ms_ssim / len(dataloader)
+            # Epoch final metric
+            if phase == 'Train':
+                train_discriminator_loss.append(epoch_discriminator_loss)
+                train_generator_loss.append(epoch_generator_loss)
+                train_ssim.append(epoch_ssim)
+                train_ms_ssim.append(epoch_ms_ssim)
+            else:
+                valid_discriminator_loss.append(epoch_discriminator_loss)
+                valid_generator_loss.append(epoch_generator_loss)
+                valid_ssim.append(epoch_ssim)
+                valid_ms_ssim.append(epoch_ms_ssim)
+                # Save interim result
+                display_progress(fake=fake_stress[0], current_epoch=epoch)
+            # Show mean results on current epoch
+            if avg_results:
+                print(f'Average along Epoch {epoch} for {phase}:')
+                print('| Discriminator Loss | Generator Loss | SSIM   | MS-SSIM |')
+                print(f'| {epoch_discriminator_loss:.4f}             | {epoch_generator_loss:.4f}        '
+                      f' | {epoch_ssim:.4f} | {epoch_ms_ssim:.4f}  |')
+                time.sleep(.1)
 
     # Save model on last epoch
-    torch.save(generator, rf'checkpoint\last.pth')
-    return generator
+    torch.save(generator, r'checkpoint\last_generator.pth')
+    # Loss and Metrics dataframe
+    df = pd.DataFrame.from_dict({
+        'Train_Discriminator-Loss': train_discriminator_loss,
+        'Valid_Discriminator-Loss': valid_discriminator_loss,
+        'Train_Generator-Loss': train_generator_loss,
+        'Valid_Generator-Loss': valid_generator_loss,
+        'Train_SSIM': train_ssim,
+        'Valid_SSIM': valid_ssim,
+        'Train_MS-SSIM': train_ms_ssim,
+        'Valid_MS-SSIM': valid_ms_ssim,
+    })
+    return generator, df
+
+
+def result_plot(loss_and_metrics):
+    """Plot loss function and Metrics"""
+    stage_list = np.unique(list(map(lambda x: x.split(sep='_')[0], loss_and_metrics.columns)))
+    variable_list = np.unique(list(map(lambda x: x.split(sep='_')[1], loss_and_metrics.columns)))
+    sub_plot_len = len(variable_list) // 2
+    fig, axs = plt.subplots(sub_plot_len, sub_plot_len, figsize=(16, 16))
+    for stage in stage_list:
+        for variable, ax in zip(variable_list, axs.ravel()):
+            loss_and_metrics[f'{stage}_{variable}'].plot(ax=ax)
+            ax.set_title(f'{variable} Plot', fontsize=10)
+            ax.set_xlabel('Epoch', fontsize=8)
+            ax.set_ylabel(f'{variable} Value', fontsize=8)
+            ax.legend()
+    fig.suptitle('Result of Model Training', fontsize=12)
+    fig.tight_layout()
+    plt.savefig('results.png')

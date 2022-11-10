@@ -8,7 +8,7 @@ import transforms
 train, valid = utils.data_preparation(settings.DATA_FOLDER)
 # Datasets
 train_dataset = utils.StressDataset(train, transform=transforms.train_aug)
-valid_dataset = utils.StressDataset(train, transform=transforms.valid_aug)
+valid_dataset = utils.StressDataset(valid, transform=transforms.valid_aug)
 # Dataloaders
 train_dataloader = torch.utils.data.DataLoader(
     train_dataset,
@@ -20,7 +20,6 @@ train_dataloader = torch.utils.data.DataLoader(
 valid_dataloader = torch.utils.data.DataLoader(
     valid_dataset,
     batch_size=settings.BATCH_SIZE,
-    shuffle=True,
     drop_last=True,
     pin_memory=True
 )

@@ -7,6 +7,7 @@ import settings
 train_aug = A.Compose([
     A.HorizontalFlip(p=.5),
     A.VerticalFlip(p=.5),
+    A.Transpose(p=.5),
     A.Normalize(mean=settings.MEAN, std=settings.STD, p=1.),
     ToTensorV2(transpose_mask=True)
 ])
