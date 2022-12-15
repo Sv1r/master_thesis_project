@@ -22,26 +22,26 @@ def data_preparation(data_folder: str) -> typing.Tuple[pd.core.frame.DataFrame, 
     Read data from folder and create Pandas DataFrames for train/valid subsets.
     """
     # Read specific folders
-    geometry_list = sorted(glob.glob(rf'{data_folder}\geom\*'))
-    stress_list = sorted(glob.glob(rf'{data_folder}\stress\*'))
-    results_list = sorted(glob.glob(rf'{data_folder}\*\*.txt'))
+    geometry_list = sorted(glob.glob(rf'{data_folder}/geom/*'))
+    stress_list = sorted(glob.glob(rf'{data_folder}/stress/*'))
+    results_list = sorted(glob.glob(rf'{data_folder}/*/*.txt'))
     # Geometry
     df_geometry = pd.DataFrame()
     df_geometry['geometry'] = geometry_list
     df_geometry['name'] = df_geometry['geometry'].apply(
-        lambda x: x.split(sep='\\')[-1].split(sep='.')[0].split(sep='_')[0]
+        lambda x: x.split(sep='/')[-1].split(sep='.')[0].split(sep='_')[0]
     )
     # Stress
     df_stress = pd.DataFrame()
     df_stress['stress'] = stress_list
     df_stress['name'] = df_stress['stress'].apply(
-        lambda x: x.split(sep='\\')[-1].split(sep='.')[0].split(sep='_')[0]
+        lambda x: x.split(sep='/')[-1].split(sep='.')[0].split(sep='_')[0]
     )
     # Results
     df_results = pd.DataFrame()
     df_results['results'] = results_list
     df_results['name'] = df_results['results'].apply(
-        lambda x: x.split(sep='\\')[-1].split(sep='.')[0].split(sep='-')[-1]
+        lambda x: x.split(sep='/')[-1].split(sep='.')[0].split(sep='-')[-1]
     )
     # Merge dataframes on inner type by name column
     df = df_geometry.merge(df_stress, on='name', how='inner').merge(df_results, on='name', how='inner')
@@ -71,7 +71,7 @@ class StressDataset(torch.utils.data.Dataset):
         stress_path = self.stress_files[index]
         result_path = self.results_files[index]
 
-        # min_stress, max_stress = np.loadtxt(result_path)
+        min_stress, max_stress = np.loadtxt(result_path)
 
         geometry = cv2.imread(geometry_path, cv2.IMREAD_GRAYSCALE)
         geometry = geometry[17:678, 331:994]
@@ -86,7 +86,7 @@ class StressDataset(torch.utils.data.Dataset):
         stress = stress[103:553, 499:951]
         stress = cv2.resize(stress, (settings.IMAGE_SIZE, settings.IMAGE_SIZE), interpolation=cv2.INTER_CUBIC)
         stress = stress / 255
-        # stress = cv2.normalize(stress, None, alpha=min_stress, beta=max_stress, norm_type=cv2.NORM_MINMAX)
+        stress = cv2.normalize(stress, None, alpha=min_stress, beta=max_stress, norm_type=cv2.NORM_MINMAX)
         stress = np.expand_dims(stress, axis=-1)
         # Augmentation
         if self.transform is not None:
@@ -97,7 +97,7 @@ class StressDataset(torch.utils.data.Dataset):
         return geometry, stress
 
 
-def image_show_tensor(dataloader, number_of_images=5, initial_index=0, values_name=None):
+def image_show_tensor(dataloader, number_of_images=5):
     geometry, stress = next(iter(dataloader))
     geometry = geometry.numpy().transpose(0, 2, 3, 1)
     geometry = np.array(settings.STD) * geometry + np.array(settings.MEAN)
@@ -129,7 +129,7 @@ def weights_init(model):
         torch.nn.init.constant_(model.bias, 0.)
 
 
-def display_progress(fake, current_epoch, path=r'checkpoint\evolution_of_generator'):
+def display_progress(fake, current_epoch, path=r'checkpoint/evolution_of_generator'):
     fake = fake.detach().cpu().permute(1, 2, 0)
     plt.figure(figsize=(8, 8))
     plt.imshow(fake, cmap='jet')
@@ -260,7 +260,7 @@ def train_model(
                 time.sleep(.1)
 
     # Save model on last epoch
-    torch.save(generator, r'checkpoint\last_generator.pth')
+    torch.save(generator, r'checkpoint/last_generator.pth')
     # Loss and Metrics dataframe
     df = pd.DataFrame.from_dict({
         'Train_Discriminator-Loss': train_discriminator_loss,
