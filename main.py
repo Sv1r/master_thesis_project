@@ -23,7 +23,7 @@ def main():
         param.requires_grad = False
     # losses
     loss_classification = torch.nn.BCELoss()
-    loss_pixel_wise = torch.nn.L1Loss()
+    loss_pixel_wise = torch.nn.functional.smooth_l1_loss
     # optimizers
     optimizer_discriminator = torch.optim.AdamW(discriminator.parameters(), lr=settings.LEARNING_RATE)
     optimizer_generator = torch.optim.AdamW(generator.parameters(), lr=settings.LEARNING_RATE)

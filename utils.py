@@ -1,4 +1,5 @@
 import cv2
+import math
 import tqdm
 import time
 import glob
@@ -86,7 +87,7 @@ class StressDataset(torch.utils.data.Dataset):
         stress = stress[103:553, 499:951]
         stress = cv2.resize(stress, (settings.IMAGE_SIZE, settings.IMAGE_SIZE), interpolation=cv2.INTER_CUBIC)
         stress = stress / 255
-        stress = cv2.normalize(stress, None, alpha=min_stress, beta=max_stress, norm_type=cv2.NORM_MINMAX)
+        # stress = cv2.normalize(stress, None, alpha=min_stress, beta=max_stress, norm_type=cv2.NORM_MINMAX)
         stress = np.expand_dims(stress, axis=-1)
         # Augmentation
         if self.transform is not None:
@@ -100,7 +101,7 @@ class StressDataset(torch.utils.data.Dataset):
 def image_show_tensor(dataloader, number_of_images=5):
     geometry, stress = next(iter(dataloader))
     geometry = geometry.numpy().transpose(0, 2, 3, 1)
-    geometry = np.array(settings.STD) * geometry + np.array(settings.MEAN)
+    geometry = settings.STD * geometry + settings.MEAN
     stress = stress.numpy().transpose(0, 2, 3, 1)
 
     fig, ax = plt.subplots(2, number_of_images, figsize=(10, 10))
@@ -109,8 +110,9 @@ def image_show_tensor(dataloader, number_of_images=5):
         ax[0, i].imshow(one_geom)
         ax[0, i].set_xticks([])
         ax[0, i].set_yticks([])
-        ax[0, i].set_title(f'Geometry Inclusion={int(one_geom.min()):.0f}; Matrix={int(one_geom.max()):.0f}')
-
+        ax[0, i].set_title(
+            f'Geometry Inclusion={int(math.ceil(one_geom.max())):.0f}; Matrix={int(math.ceil(one_geom.min())):.0f}'
+        )
         one_stress = stress[i]
         ax[1, i].imshow(one_stress, cmap='jet')
         ax[1, i].set_xticks([])
@@ -129,12 +131,12 @@ def weights_init(model):
         torch.nn.init.constant_(model.bias, 0.)
 
 
-def display_progress(fake, current_epoch, path=r'checkpoint/evolution_of_generator'):
+def display_progress(fake, current_epoch, path='checkpoint/evolution_of_generator'):
     fake = fake.detach().cpu().permute(1, 2, 0)
     plt.figure(figsize=(8, 8))
     plt.imshow(fake, cmap='jet')
     plt.axis('off')
-    plt.savefig(rf'{path}\{current_epoch}.png')
+    plt.savefig(f'{path}/{current_epoch}.png')
 
 
 def train_model(
@@ -253,14 +255,14 @@ def train_model(
                 display_progress(fake=fake_stress[0], current_epoch=epoch)
             # Show mean results on current epoch
             if avg_results:
-                print(f'Average along Epoch {epoch} for {phase}:')
+                print(f'Mean for Epoch {epoch} - {phase}:')
                 print('| Discriminator Loss | Generator Loss | SSIM   | MS-SSIM |')
                 print(f'| {epoch_discriminator_loss:.4f}             | {epoch_generator_loss:.4f}        '
                       f' | {epoch_ssim:.4f} | {epoch_ms_ssim:.4f}  |')
                 time.sleep(.1)
 
     # Save model on last epoch
-    torch.save(generator, r'checkpoint/last_generator.pth')
+    torch.save(generator, 'checkpoint/last_generator.pth')
     # Loss and Metrics dataframe
     df = pd.DataFrame.from_dict({
         'Train_Discriminator-Loss': train_discriminator_loss,

@@ -26,6 +26,7 @@ class Discriminator(torch.nn.Module):
             torch.nn.LeakyReLU(0.2, inplace=True),
             torch.nn.InstanceNorm2d(self.ndf * 8),
             torch.nn.Conv2d(self.ndf * 8, self.out_channels, 4, 1, 1, bias=False),
+            torch.nn.Sigmoid()
         )
 
     def forward(self, x, label):
